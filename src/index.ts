@@ -4,37 +4,12 @@ import { MenuItemLocation } from 'api/types';
 const fs = (joplin as any).require('fs-extra');
 const path = require('path');
 
-//---------creates title for note as required in jekyll
-function titleCreator( title : string ) {
-	let today = new Date();
-	let fPart = today.getFullYear() + '-' + (today.getMonth() + 1) + '-' + today.getDate() + '-';
-	let sPart = title.split(' ').join('-');
-	return (fPart + sPart);
+function sanitizeTitle( title: string ) {
+	return title.replace(/[\/\\?%*:|"<>]/g, '-');
 }
-
-//---------collecting and transfering the static file
-async function resourceFetcher(note, resourceDir: string, destPath: string , ssg ) {
-	const { items } = await joplin.data.get(['notes', note.id, 'resources'] , { fields: ['id', 'title', 'file_extension']} );
-	for( var i = 0; i < items.length; i++ ) {
-		const resource = items[i];
-		const ext = resource.file_extension;
-		const srcPath = path.join(resourceDir, `${resource.id}.${ext}`);
-		const dest_Path = path.join(destPath, resource.title)
-		await fs.copy(srcPath, dest_Path);
-		if (ssg === 'hugo') {
-			note.body = note.body.replace( `:/${resource.id}`,  `/resources/${resource.title}` );
-		} else if (ssg === 'gatsby') {
-			note.body = note.body.replace( `:/${resource.id}`,  path.join('..', '..', 'static' , `${resource.title}`));
-		} else if (ssg === 'jekyll') {
-			note.body = note.body.replace( `:/${resource.id}`, path.join('..', 'resources', `${resource.title}`));
-		}
-	};
-};
 
 joplin.plugins.register({
 	onStart: async function () {
-		const resourceDir = await joplin.settings.globalValue('resourceDir');
-
 		/*******************Dialog Configurations*******************/
 		const dialogs = joplin.views.dialogs;
 		const ssg_dialog = await dialogs.create('SSG-Dialog');
@@ -48,21 +23,43 @@ joplin.plugins.register({
 			<div class="dialog-main">
 				<form id="swg-form" name="basic_info">
             	    <div class="field">
-						<p class="labels" >Choose your SSG (<span>*required</span>)</p>
-						<label for="hugo">Hugo</label>
-  						<input type="radio" id="hugo" name="ssg" value="hugo"><br>
-  						<label for="gatsby">Gatsby</label>
-  						<input type="radio" id="gatsby" name="ssg" value="gatsby"><br>
-  						<label for="jekyll">Jekyll</label>
-  						<input type="radio" id="jekyll" name="ssg" value="jekyll"><br>
-            	    </div>
-            	    <div class="field">
-            	        <label class="block-element labels" for="dest_Path"> Project Path (<span>*required</span>) </label>
-					    <input class="block-element" id="dest_Path" type="text" name="dest_Path" required autocomplete placeholder="Paste the absolute path" />   
+            	        <label class="block-element labels" for="dest_Path"> Export Path (<span>*required</span>) </label>
+					    <input class="block-element" id="dest_Path" type="text" name="dest_Path" required autocomplete value="C:\\md2blogN\\content\\posts" />   
             	    </div>
             	    <div class="field">
 					    <label class="block-element labels" for="frontMatter" >Front Matter (<span>optional</span>) </label>
-					    <textarea placeholder="Type front matter here..." class="block-element" id = "frontMatter" rows = 10 cols="20" name="frontMatter"></textarea>
+					    <textarea class="block-element" id="frontMatter" rows="8" cols="20" name="frontMatter">---
+title: 自动获取笔记名称
+description: 更新中
+date: 自动获取目前日期
+---</textarea>
+            	    </div>
+            	    <div class="field">
+					    <label class="block-element labels" for="footerMatter" >Footer Matter (<span>optional</span>) </label>
+					    <textarea class="block-element" id="footerMatter" rows="8" cols="20" name="footerMatter">---
+## 联系我
+
+<p align="left">
+  <a href="tel:0952966666" target="_blank" rel="noopener noreferrer">
+    <img alt="Phone" src="https://api.iconify.design/mdi/phone.svg?color=%23485D55" width="28" height="28">
+  </a>&nbsp;&nbsp;
+  <a href="mailto:m@stao.fr" target="_blank" rel="noopener noreferrer">
+    <img alt="Email" src="https://cdn.simpleicons.org/gmail/485D55" width="28" height="28">
+  </a>&nbsp;&nbsp;
+  <a href="https://discord.gg/pp3FyfnnTW" target="_blank" rel="noopener noreferrer">
+    <img alt="Discord" src="https://cdn.simpleicons.org/discord/5865F2" width="28" height="28">
+  </a>&nbsp;&nbsp;
+  <a href="https://t.me/+v8mkJAHapSU0Yzgx" target="_blank" rel="noopener noreferrer">
+    <img alt="Telegram" src="https://cdn.simpleicons.org/telegram/26A5E4" width="28" height="28">
+  </a>&nbsp;&nbsp;
+  <a href="https://wa.me/33326402301" target="_blank" rel="noopener noreferrer">
+    <img alt="WhatsApp" src="https://cdn.simpleicons.org/whatsapp/25D366" width="28" height="28">
+  </a>&nbsp;&nbsp;
+  <a href="https://cloud.msun.fr/prive/logos/stao-wechat-qr.png" target="_blank" rel="noopener noreferrer">
+    <img alt="Wechat" src="https://cdn.simpleicons.org/wechat/07C160" width="28" height="28">
+  </a>
+</p>
+---</textarea>
             	    </div>
 				</form> 
 			</div>
@@ -88,69 +85,51 @@ joplin.plugins.register({
 		await joplin.commands.register({
             name: 'exportingProcedure',
 			execute: async (...args) => {
-				
-				//---------prequesite variables
-				let ssg = args[1].basic_info.ssg;
-				let dest_Path = args[1].basic_info.dest_Path;
-				let frontMatter = args[1].basic_info.frontMatter;
-				const basketFolder = await joplin.data.get(['folders', args[0]], { fields: ['id', 'title', 'body'] });
-				const { items } = await joplin.data.get(['notes'], { fields: ['id', 'title', 'body', 'parent_id'] });
-				const filteredNotes = items.filter( note => {
-					return (note.parent_id === args[0]);
-				});
+				try {
+					//---------prequesite variables
+					let dest_Path = args[1].basic_info.dest_Path.trim();
+					let frontMatter = args[1].basic_info.frontMatter || '';
+					let footerMatter = args[1].basic_info.footerMatter || '';
+					
+					let page = 1;
+					let hasMore = true;
+					let filteredNotes: any[] = [];
+					while (hasMore) {
+						const response = await joplin.data.get(['folders', args[0], 'notes'], { 
+							fields: ['id', 'title', 'body', 'parent_id'], 
+							page: page 
+						});
+						filteredNotes = filteredNotes.concat(response.items);
+						hasMore = !!response.has_more;
+						page++;
+					}
 
-				if (ssg === 'hugo') {
-					//---------handle exporting into hugo
-					const folderName = basketFolder.title + '-' + basketFolder.id ;
-					await fs.mkdirp(path.join(dest_Path, 'content', folderName));//markdown
+					if (filteredNotes.length === 0) {
+						await joplin.views.dialogs.showMessageBox('No notes found in this folder!');
+						return;
+					}
 
-					await fs.mkdirp(path.join(dest_Path, 'static' , 'resources'));//static'
+					await fs.mkdirp(dest_Path);
 
-					const resourceDestPath = (path.join(dest_Path, 'static' ,'resources'));
-
-					for (var i = 0; i < filteredNotes.length; i++) {
+					for(var i = 0; i < filteredNotes.length; i++) {
 						const note = filteredNotes[i];
-						await resourceFetcher(note, resourceDir, resourceDestPath, ssg);
-						note.body = frontMatter + '\n' + note.body;
-						fs.writeFile(path.join(dest_Path, 'content', folderName, `${note.title}.md`), note.body);
+						
+						let today = new Date();
+						let formattedDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+						
+						let noteFrontMatter = frontMatter
+							.replace('自动获取笔记名称', note.title)
+							.replace('自动获取目前日期', formattedDate);
+						
+						note.body = noteFrontMatter + (noteFrontMatter ? '\n' : '') + note.body + (footerMatter ? '\n' : '') + footerMatter;
+						const safeTitle = sanitizeTitle(note.title);
+						await fs.writeFile(path.join(dest_Path, `${safeTitle}.md`), note.body);
 					};
-				} else if (ssg === 'gatsby') {
-					//---------handle exporting into gatsby
-					await fs.mkdirp(path.join(dest_Path, 'src', 'markdown'));//markdown
-
-					fs.readdir(path.join(dest_Path, 'static'), async err => {
-						if (err) {
-							await fs.mkdirp( path.join( dest_Path , 'static' ) );//static
-						}
-						
-						const resourceDestPath = (path.join(dest_Path, 'static'));
-
-						for (var i = 0; i < filteredNotes.length; i++) {
-							const note = filteredNotes[i];
-							await resourceFetcher(note, resourceDir, resourceDestPath, ssg);
-							note.body = frontMatter + '\n' + note.body;
-							fs.writeFile(path.join(dest_Path, 'src', 'markdown', `${note.title}-${note.id}.md`), note.body);
-						};
-					});
-				} else if (ssg === 'jekyll') {
-					//---------handle exporting into gatsby
-					fs.readdir(path.join(dest_Path, '_posts'), async (err, files) => {
-						if (err) {
-							await fs.mkdirp( path.join( dest_Path , '_posts' ) );//markdowns
-						}
-						await fs.mkdirp(path.join(dest_Path, 'resources'));//static files
-
-						const resourceDestPath = (path.join(dest_Path , 'resources'));
-						
-						for(var i = 0; i < filteredNotes.length; i++) {
-							const note = filteredNotes[i];
-							await resourceFetcher( note , resourceDir , resourceDestPath , ssg  );
-							note.body = frontMatter + '\n' + note.body;
-							note.title = titleCreator(note.title);
-							fs.writeFile(path.join(dest_Path , '_posts' , `${note.title}-${note.id}.md`), note.body);
-						};
-					});
-                }
+				
+				await joplin.views.dialogs.showMessageBox('Export completed successfully!');
+				} catch (error) {
+					await joplin.views.dialogs.showMessageBox('Export failed: ' + error.message);
+				}
             }
 		});
 		
@@ -164,12 +143,8 @@ joplin.plugins.register({
 				const { id, formData } = await dialogs.open(ssg_dialog);
 				if (id == "submit") {
 					//---------form validation
-					if (!formData.basic_info.ssg) {
-						alert('Please choose one static site generator.');
-						return;
-					}
-					if (!path.isAbsolute(formData.basic_info.dest_Path)) {
-						alert('Provided path is not valid.')
+					if (!formData.basic_info.dest_Path || !path.isAbsolute(formData.basic_info.dest_Path.trim())) {
+						await joplin.views.dialogs.showMessageBox('Provided path is not valid.');
 						return;
 					}
                     await joplin.commands.execute('exportingProcedure', folderId , formData);
