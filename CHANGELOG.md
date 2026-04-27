@@ -2,6 +2,32 @@
 
 This document tracks the custom modifications made to the `joplin-exports-to-ssg` plugin. 
 
+## [Custom Release] - 2026-04-27
+
+### ✨ 新增与增强功能 (Features & Enhancements)
+
+- **Front Matter 默认模板英文占位符更新**：
+  - `title` 默认值从 `自动获取笔记名称` 改为 `Get the note name`。
+  - `date` 默认值从 `自动获取目前日期` 改为 `Get the current date`。
+- **Description 自动提取一级标题**：
+  - `description` 默认值改为 `Get the top-level heading`。
+  - 导出时系统会自动读取当前笔记正文中的第一个一级标题（`# 标题`），并填入 YAML Front Matter 的 `description` 字段。
+- **Footer Matter 默认内容改版**：
+  - 默认页脚替换为新的“## 联系我”Markdown 图标链接版本。
+  - 保留 `jop-noMdConv` 类名，方便在 Joplin 中按预期渲染图标链接。
+- **支持递归导出子笔记本**：
+  - 导出某个笔记本时，系统现在会递归包含其所有子笔记本、孙级笔记本中的笔记。
+  - 导出目标目录会同步保留 Joplin 中的笔记本层级结构，而不再只支持当前目录第一层笔记。
+
+### 🐛 错误修复与稳定性提升 (Bug Fixes & Stability)
+
+- **修复递归子目录导出 `not found` 问题**：
+  - 初版递归实现依赖特定子目录接口，在当前插件环境下会触发 `not found`。
+  - 现已改为先读取全部笔记本，再根据 `parent_id` 在内存中构建目录树，避免接口兼容性问题。
+- **修复电话图标链接错误**：
+  - Footer Matter 中电话图标原先链接为 `#`，点击后只会跳转当前页锚点。
+  - 现已改为 `tel:0952966666`，支持在兼容环境中直接触发拨号。
+
 ## [Custom Release] - 2026-04-25
 
 ### ✨ 新增与增强功能 (Features & Enhancements)
